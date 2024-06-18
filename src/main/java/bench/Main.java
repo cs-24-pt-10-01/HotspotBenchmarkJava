@@ -37,26 +37,17 @@ public class Main {
     }
 
     public static void main(String[] args) {
-        // System.load("./thor_lib.so");
+        var dll_path = System.getProperty("user.dir") + "/thor_lib.so"; // change to .so for linux
+        System.load(dll_path);
 
         // Loading functions
-        // MemorySegment start_rapl_symbol =
-        // SymbolLookup.loaderLookup().find("start_rapl").get();
-        // MethodHandle start_rapl =
-        // Linker.nativeLinker().downcallHandle(start_rapl_symbol,
-        // FunctionDescriptor.of(ValueLayout.JAVA_INT));
+        MemorySegment start_rapl_symbol = SymbolLookup.loaderLookup().find("start_rapl").get();
+        MethodHandle start_rapl = Linker.nativeLinker().downcallHandle(start_rapl_symbol,
+                FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS));
 
-        // MemorySegment stop_rapl_symbol =
-        // SymbolLookup.loaderLookup().find("stop_rapl").get();
-        // MethodHandle stop_rapl =
-        // Linker.nativeLinker().downcallHandle(stop_rapl_symbol,
-        // FunctionDescriptor.of(ValueLayout.JAVA_INT));
-
-        //try {
-        //    start_rapl.invoke();
-        //} catch (Throwable e) {
-        //    e.printStackTrace();
-        //}
+        MemorySegment stop_rapl_symbol = SymbolLookup.loaderLookup().find("stop_rapl").get();
+        MethodHandle stop_rapl = Linker.nativeLinker().downcallHandle(stop_rapl_symbol,
+                FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS));
 
         String input = "ToBeSorted.txt";
 
@@ -69,13 +60,40 @@ public class Main {
         String[] data = input.replace("[", "").replace("]", "").split(",");
         List<Long> sortParam = Arrays.stream(data).map(String::trim).map(Long::valueOf).toList();
 
-        long fib = Fib.recFibN(47);
-        NBody.N_Body(50000000);
-        var MergeSorted = Merge.mergeSort(sortParam);
-        var QuickSorted = QuickSort.quickSort(sortParam);
+        try {
+            start_rapl.invoke();
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
 
-        System.out.println("Fibonacci: " + fib);
-        System.out.println("Merge Sort: " + MergeSorted);
-        System.out.println("Quick Sort: " + QuickSorted);
+        try (Arena arena = Arena.ofConfined()) {
+            // c strings
+            MemorySegment FibName = arena.allocateFrom("Fib");
+            MemorySegment NbodyName = arena.allocateFrom("N-body");
+            MemorySegment MergeName = arena.allocateFrom("MergeSort");
+            MemorySegment QuickName = arena.allocateFrom("QuickSort");
+
+            start_rapl.invoke(FibName);
+            long fib = Fib.recFibN(47);
+            stop_rapl.invoke(FibName);
+
+            start_rapl.invoke(NbodyName);
+            NBody.N_Body(50000000);
+            stop_rapl.invoke((NbodyName));
+
+            start_rapl.invoke(MergeName);
+            var MergeSorted = Merge.mergeSort(sortParam);
+            stop_rapl.invoke(MergeName);
+
+            start_rapl.invoke(QuickName);
+            var QuickSorted = QuickSort.quickSort(sortParam);
+            stop_rapl.invoke(QuickName);
+
+            System.out.println("Fibonacci: " + fib);
+            System.out.println("Merge Sort: " + MergeSorted);
+            System.out.println("Quick Sort: " + QuickSorted);
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
     }
 }
